@@ -17,15 +17,15 @@ global {
         create building from: buildings_shapefile;
 
         // Create some terminals and hotspots for demonstration
-        create terminal number: 3 {
+        create terminal number: 10 {
             location <- one_of(road).location;
         }
-        create hotspot number: 5 {
+        create hotspot number: 10 {
             location <- one_of(road).location;
         }
 
         // Create some vehicles
-        create vehicle number: 5 {
+        create vehicle number: 10 {
             type <- "jeepney";
             capacity <- 10;
             available <- true;
@@ -34,13 +34,15 @@ global {
         }
 
         // Create some commuters
-        create commuter number: 10 {
-            start <- one_of(terminal);
-            destination <- one_of(terminal);
+        create commuter number: 100 {
+            start_terminal <- one_of(terminal);
+            destination_terminal <- one_of(terminal);
             preferred_transport <- "jeepney";
             patience_level <- rnd(5, 15);
-            current_terminal <- start;
-            location <- start.location;
+            current_terminal <- start_terminal;
+            location <- start_terminal.location;
+            destination <- destination_terminal.location;
+            intermediate_hotspot <- one_of(hotspot);
         }
     }
 }
@@ -80,26 +82,83 @@ species hotspot {
     }
 }
 
-species commuter {
-    terminal start;
-    terminal destination;
+species commuter skills: [moving] {
+    terminal start_terminal;
+    terminal destination_terminal;
     string preferred_transport;
     float patience_level;
     terminal current_terminal;
+    point location;
+    point destination;
+    string objective <- "idle";
+    point the_target <- nil;
+    hotspot intermediate_hotspot;
 
     aspect base {
         draw circle(2) color: #green;
     }
+
+    reflex start_journey when: objective = "idle" {
+        objective <- "travelling";
+        the_target <- intermediate_hotspot.location;
+    }
+
+    reflex move when: the_target != nil {
+        do goto target: the_target;
+        if (the_target = location) {
+            if (location = intermediate_hotspot.location) {
+                the_target <- destination;
+            } else {
+                the_target <- nil;
+                objective <- "idle";
+                current_terminal <- destination_terminal;
+            }
+        }
+    }
 }
 
-species vehicle {
+species vehicle skills: [moving] {
     string type; // tricycle, jeepney
     int capacity;
     bool available;
     terminal current_terminal;
+    point location;
+    point destination;
+    string objective <- "waiting";
+    point the_target <- nil;
+    hotspot intermediate_hotspot;
 
     aspect base {
         draw square(3) color: (type = "jeepney" ? #orange : #yellow);
+    }
+
+    reflex assign_trip when: objective = "waiting" and available = true {
+        intermediate_hotspot <- one_of(hotspot);
+        the_target <- intermediate_hotspot.location;
+        objective <- "moving_to_hotspot";
+        available <- false;
+    }
+
+    reflex move_to_hotspot when: the_target != nil and objective = "moving_to_hotspot" {
+        do goto target: the_target;
+        if (the_target = location) {
+            the_target <- nil;
+            terminal random_terminal <- one_of(terminal);
+            destination <- random_terminal.location;
+            the_target <- destination;
+            objective <- "moving_to_terminal";
+        }
+    }
+
+    reflex move_to_terminal when: the_target != nil and objective = "moving_to_terminal" {
+        do goto target: the_target;
+        if (the_target = location) {
+            the_target <- nil;
+            objective <- "waiting";
+            current_terminal <- one_of(terminal);
+            location <- current_terminal.location;
+            available <- true;
+        }
     }
 }
 
