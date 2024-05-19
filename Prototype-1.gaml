@@ -26,9 +26,12 @@ global {
         create hotspot number: 10 {
             location <- one_of(road).location;
         }
+        create commuter_starting_point number: 10 {
+            location <- one_of(road).location;
+        }
 
         // Create some vehicles
-        create vehicle number: 10 {
+        create vehicle number: 100 {
             type <- "jeepney";
             capacity <- 10;
             available <- true;
@@ -43,7 +46,7 @@ global {
             preferred_transport <- "jeepney";
             patience_level <- rnd(5, 15);
             current_terminal <- start_terminal;
-            location <- start_terminal.location;
+            location <- one_of(commuter_starting_point).location;  // Modified to start at commuter_starting_point
             destination <- destination_terminal.location;
             intermediate_hotspot <- one_of(hotspot);
         }
@@ -51,6 +54,14 @@ global {
 
     reflex update_step_count {
         step_count <- step_count + 1;
+    }
+}
+
+species commuter_starting_point {
+    rgb color <- #purple;
+
+    aspect base {
+        draw triangle(10) color: color;
     }
 }
 
@@ -85,7 +96,7 @@ species hotspot {
     rgb color <- #red;
 
     aspect base {
-        draw circle(3) color: color;
+        draw circle(5) color: color;
     }
 }
 
@@ -138,7 +149,7 @@ species vehicle skills: [moving] {
     hotspot intermediate_hotspot;
 
     aspect base {
-        draw square(3) color: (type = "jeepney" ? #orange : #yellow);
+        draw square(5) color: (type = "jeepney" ? #orange : #yellow);
     }
 
     reflex assign_trip when: objective = "waiting" and available = true and commuters_reached_hotspot {
@@ -179,6 +190,7 @@ experiment road_traffic type: gui {
             species hotspot aspect: base;
             species commuter aspect: base;
             species vehicle aspect: base;
+            species commuter_starting_point aspect: base;
         }
     }
 }
