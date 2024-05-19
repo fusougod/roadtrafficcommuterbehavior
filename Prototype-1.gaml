@@ -12,6 +12,9 @@ global {
     file buildings_shapefile <- file("../includes/shapefiles/Crossing-Buildings.shp");
     geometry shape <- envelope(roads_shapefile);
 
+    int step_count <- 0;
+    bool commuters_reached_hotspot <- false;
+
     init {
         create road from: roads_shapefile;
         create building from: buildings_shapefile;
@@ -44,6 +47,10 @@ global {
             destination <- destination_terminal.location;
             intermediate_hotspot <- one_of(hotspot);
         }
+    }
+
+    reflex update_step_count {
+        step_count <- step_count + 1;
     }
 }
 
@@ -99,19 +106,21 @@ species commuter skills: [moving] {
     }
 
     reflex start_journey when: objective = "idle" {
-        objective <- "travelling";
+        objective <- "travelling_to_hotspot";
         the_target <- intermediate_hotspot.location;
     }
 
     reflex move when: the_target != nil {
-        do goto target: the_target;
+        do goto target: the_target on: road;
         if (the_target = location) {
             if (location = intermediate_hotspot.location) {
                 the_target <- destination;
+                objective <- "travelling_to_terminal";
             } else {
                 the_target <- nil;
                 objective <- "idle";
                 current_terminal <- destination_terminal;
+                commuters_reached_hotspot <- true;
             }
         }
     }
@@ -132,7 +141,7 @@ species vehicle skills: [moving] {
         draw square(3) color: (type = "jeepney" ? #orange : #yellow);
     }
 
-    reflex assign_trip when: objective = "waiting" and available = true {
+    reflex assign_trip when: objective = "waiting" and available = true and commuters_reached_hotspot {
         intermediate_hotspot <- one_of(hotspot);
         the_target <- intermediate_hotspot.location;
         objective <- "moving_to_hotspot";
@@ -140,18 +149,17 @@ species vehicle skills: [moving] {
     }
 
     reflex move_to_hotspot when: the_target != nil and objective = "moving_to_hotspot" {
-        do goto target: the_target;
+        do goto target: the_target on: road;
         if (the_target = location) {
             the_target <- nil;
-            terminal random_terminal <- one_of(terminal);
-            destination <- random_terminal.location;
+            destination <- one_of(terminal).location;
             the_target <- destination;
             objective <- "moving_to_terminal";
         }
     }
 
     reflex move_to_terminal when: the_target != nil and objective = "moving_to_terminal" {
-        do goto target: the_target;
+        do goto target: the_target on: road;
         if (the_target = location) {
             the_target <- nil;
             objective <- "waiting";
