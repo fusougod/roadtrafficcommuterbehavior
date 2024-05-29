@@ -41,7 +41,7 @@ global {
         point start_terminal_location <- {300, 300};
 
         // Create the start terminal
-       create house number: 4 {
+        create house number: 4 {
             location <- house_locations[index];
         }
 
@@ -51,7 +51,7 @@ global {
         }
 
         create hotspot number: 4 {
-         location <- hotspot_locations[index];
+            location <- hotspot_locations[index];
         }
 
         // Create some vehicles
@@ -63,27 +63,57 @@ global {
             location <- current_terminal.location;
         }
 
-        // Create some commuters
-        create student number: 10 {
-            start_terminal <- one_of(house);
-            destination_terminal <- one_of(terminal);
-            preferred_transport <- "jeepney";
-            patience_level <- rnd(5.0, 15.0);
-            current_terminal <- start_terminal;
-            location <- start_terminal.location;
-            destination <- destination_terminal.location;
-            intermediate_hotspot <- one_of(hotspot);
+        // Create some tricycles
+        create tricycle number: 10 {
+            current_terminal <- one_of(terminal);
+            location <- current_terminal.location;
         }
-        create worker number: 50 {
-            start_terminal <- one_of(house);
-            destination_terminal <- one_of(terminal);
-            preferred_transport <- "jeepney";
-            patience_level <- rnd(5, 15);
-            current_terminal <- start_terminal;
-            location <- start_terminal.location;
-            destination <- destination_terminal.location;
-            intermediate_hotspot <- one_of(hotspot);
-        }
+
+create student number: 5 {
+    start_terminal <- one_of(house);
+    destination_terminal <- one_of(terminal);
+    preferred_transport <- "jeepney";
+    patience_level <- rnd(5.0, 15.0);
+    current_terminal <- start_terminal;
+    location <- start_terminal.location;
+    destination <- destination_terminal.location;
+    intermediate_hotspot <- one_of(hotspot);
+}
+
+create student number: 5 {
+    start_terminal <- one_of(house);
+    destination_terminal <- one_of(terminal);
+    preferred_transport <- "jeepney";
+    patience_level <- rnd(5.0, 15.0);
+    current_terminal <- start_terminal;
+    location <- start_terminal.location;
+    destination <- destination_terminal.location; // All students go to the terminal
+    intermediate_hotspot <- one_of(hotspot);
+}
+
+create worker number: 10 {
+    start_terminal <- one_of(house);
+    destination_terminal <- one_of(terminal);
+    preferred_transport <- "jeepney";
+    patience_level <- rnd(5, 15);
+    current_terminal <- start_terminal;
+    location <- start_terminal.location;
+    destination <- destination_terminal.location;
+    intermediate_hotspot <- one_of(hotspot);
+}
+
+create worker number: 10 {
+    start_terminal <- one_of(house);
+    destination_terminal <- one_of(terminal);
+    preferred_transport <- "jeepney";
+    patience_level <- rnd(5, 15);
+    current_terminal <- start_terminal;
+    location <- start_terminal.location;
+    destination <- destination_terminal.location; // All workers go to the terminal
+    intermediate_hotspot <- one_of(hotspot);
+}
+
+
     }
 
     reflex update_step_count {
@@ -152,7 +182,8 @@ species student skills: [moving] {
     string objective <- "idle";
     point the_target <- nil;
     hotspot intermediate_hotspot;
-    float speed <- 1.0;
+    float speed <- 2.0;
+    vehicle riding_vehicle <- nil;
 
     aspect default {
         draw circle(4) color: #pink;
@@ -192,12 +223,8 @@ species student skills: [moving] {
         }
     }
 
-    // Reset for the next day
-    reflex reset_day when: current_time = 0 {
-        objective <- "idle";
-        the_target <- nil;
-        location <- start_terminal.location;
-        current_terminal <- start_terminal;
+    reflex follow_vehicle when: riding_vehicle != nil {
+        the_target <- riding_vehicle.location;
     }
 }
 
@@ -212,9 +239,10 @@ species worker skills: [moving] {
     string objective <- "idle";
     point the_target <- nil;
     hotspot intermediate_hotspot;
+    vehicle riding_vehicle <- nil;
 
     aspect default {
-        draw circle(2) color: #green;
+        draw circle(4) color: #green;
     }
 
     reflex start_journey when: objective = "idle" {
@@ -237,6 +265,10 @@ species worker skills: [moving] {
         }
     }
 
+    reflex follow_vehicle when: riding_vehicle != nil {
+        the_target <- riding_vehicle.location;
+    }
+
     // Reset for the next day
     reflex reset_day when: current_time = 0 {
         objective <- "idle";
@@ -246,8 +278,9 @@ species worker skills: [moving] {
     }
 }
 
+
 species vehicle skills: [moving] {
-    string type; // tricycle, jeepney
+    string type;
     int capacity;
     bool available;
     terminal current_terminal;
@@ -290,6 +323,51 @@ species vehicle skills: [moving] {
     }
 }
 
+species tricycle skills: [moving] {
+    string type <- "tricycle"; // Default type is tricycle
+    int capacity <- 4; // Capacity specific to tricycles
+    bool available <- true;
+    terminal current_terminal;
+    point location;
+    point destination;
+    string objective <- "waiting";
+    point the_target <- nil;
+    hotspot intermediate_hotspot;
+
+    aspect default {
+        draw square(5) color: #yellow;
+    }
+
+    reflex assign_trip when: objective = "waiting" and available = true and commuters_reached_hotspot {
+        intermediate_hotspot <- one_of(hotspot);
+        the_target <- intermediate_hotspot.location;
+        objective <- "moving_to_hotspot";
+        available <- false;
+    }
+
+    reflex move_to_hotspot when: the_target != nil and objective = "moving_to_hotspot" {
+        do goto target: the_target on: road_network speed: 1.0; // Slightly slower than jeepney
+        if (the_target = location) {
+            the_target <- nil;
+            destination <- one_of(terminal).location;
+            the_target <- destination;
+            objective <- "moving_to_terminal";
+        }
+    }
+
+    reflex move_to_terminal when: the_target != nil and objective = "moving_to_terminal" {
+        do goto(target: the_target) speed: 1.0; // Slightly slower than jeepney
+        if (the_target = location) {
+            the_target <- nil;
+            objective <- "waiting";
+            current_terminal <- one_of(terminal);
+            location <- current_terminal.location;
+            available <- true;
+        }
+    }
+}
+
+
 experiment road_traffic type: gui {
     parameter "File:" var: osmfile <- file (osm_file("../includes/eto don sa crossing.osm", filtering));
     output {
@@ -303,6 +381,7 @@ experiment road_traffic type: gui {
             species worker refresh: false;
             species vehicle refresh: false;
             species house refresh: false;
+            species tricycle refresh: false;
         }
     }
 }
