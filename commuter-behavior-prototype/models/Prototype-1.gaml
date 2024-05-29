@@ -36,12 +36,13 @@ global {
         }
         road_network <- as_edge_graph(road);
         list<point> terminal_locations <- [{568,680}, {180,405}, {508,428}, {658,512}];
-        list<point> house_locations <- [{680,450}, {190,415}, {558,418}, {698,572}];
+        list<point> house_locations <- [{450,500}, {500,450}, {350,460}, {590,450}];
+        list<point> hotspot_locations <- [{540,570}, {700,525}, {130,405}, {570,490}];
         point start_terminal_location <- {300, 300};
 
         // Create the start terminal
-        create house number: 2 {
-            location <- start_terminal_location;
+       create house number: 4 {
+            location <- house_locations[index];
         }
 
         // Create some terminals and hotspots for demonstration
@@ -49,11 +50,8 @@ global {
             location <- terminal_locations[index];
         }
 
-        create hotspot number: 10 {
-            point terminal_location <- one_of(terminal).location;
-            float offset_x <- rnd(-20, 80);
-            float offset_y <- rnd(-10, 90);
-            location <- [terminal_location.x + offset_x, terminal_location.y + offset_y];
+        create hotspot number: 4 {
+         location <- hotspot_locations[index];
         }
 
         // Create some vehicles
@@ -128,10 +126,10 @@ species terminal {
 }
 
 species house {
-    string type <- "start_terminal";
+    string type <- "house";
     rgb color <- #purple;
     aspect default {
-        draw triangle(8) color: color;
+        draw triangle(9) color: color;
     }
 }
 
