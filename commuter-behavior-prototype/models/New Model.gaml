@@ -1,117 +1,205 @@
-/**
-* Name: Movement of the people agents
-* Author:
-* Description: third part of the tutorial: Road Traffic
-* Tags: agent_movement
-*/
-
-model tutorial_gis_city_traffic
+model Prototype1
 
 global {
-	file shape_file_buildings <- file("../includes/building.shp");
-	file shape_file_roads <- file("../includes/road.shp");
-	file shape_file_bounds <- file("../includes/bounds.shp");
-	geometry shape <- envelope(shape_file_bounds);
-	float step <- 10 #mn;
-	date starting_date <- date("2019-09-01-00-00-00");
-	int nb_people <- 100;
-	int min_work_start <- 6;
-	int max_work_start <- 8;
-	int min_work_end <- 16; 
-	int max_work_end <- 20; 
-	float min_speed <- 1.0 #km / #h;
-	float max_speed <- 5.0 #km / #h; 
-	graph the_graph;
-	
-	init {
-		create building from: shape_file_buildings with: [type::string(read ("NATURE"))] {
-			if type="Industrial" {
-				color <- #blue ;
-			}
-		}
-		create road from: shape_file_roads ;
-		the_graph <- as_edge_graph(road);
-		
-		list<building> residential_buildings <- building where (each.type="Residential");
-		list<building> industrial_buildings <- building  where (each.type="Industrial") ;
-		create people number: nb_people {
-			speed <- rnd(min_speed, max_speed);
-			start_work <- rnd (min_work_start, max_work_start);
-			end_work <- rnd(min_work_end, max_work_end);
-			living_place <- one_of(residential_buildings);
-			working_place <- one_of(industrial_buildings);
-			objective <- "resting";
-			location <- any_location_in (living_place); 
-		}
-	}
+    // Map used to filter the object to build from the OSM file according to attributes.
+    map filtering <- map(["highway"::["primary", "secondary", "tertiary", "motorway", "living_street", "residential", "unclassified"], "building"::["yes"]]);
+    // OSM file to load
+    file osmfile;
+
+    // Compute the size of the environment from the envelope of the OSM file
+    geometry shape <- envelope(osmfile);
+
+    int step_count <- 0;
+    bool commuters_reached_hotspot <- false;
+
+    init {
+        // Load the OSM file and create osm_agent species
+        create osm_agent from: osmfile with: [highway_str::string(read("highway")), building_str::string(read("building"))];
+
+        // From the created generic agents, creation of the selected agents
+        ask osm_agent {
+            if (length(shape.points) = 1 and highway_str != nil) {
+                create node_agent with: [shape::shape, type:: highway_str];
+            } else {
+                if (highway_str != nil) {
+                    create road with: [shape::shape, type:: highway_str];
+                } else if (building_str != nil) {
+                    create building with: [shape::shape];
+                }
+            }
+            // Do the generic agent die
+            do die;
+        }
+
+        // Create some terminals and hotspots for demonstration
+        create terminal number: 10 {
+            location <- one_of(road).location;
+        }
+        create hotspot number: 10 {
+            location <- one_of(road).location;
+        }
+
+        // Create some vehicles
+        create vehicle number: 10 {
+            type <- "jeepney";
+            capacity <- 10;
+            available <- true;
+            current_terminal <- one_of(terminal);
+            location <- current_terminal.location;
+        }
+
+        // Create some commuters
+        create commuter number: 100 {
+            start_terminal <- one_of(terminal);
+            destination_terminal <- one_of(terminal);
+            preferred_transport <- "jeepney";
+            patience_level <- rnd(5, 15);
+            current_terminal <- start_terminal;
+            location <- start_terminal.location;
+            destination <- destination_terminal.location;
+            intermediate_hotspot <- one_of(hotspot);
+        }
+    }
+
+    reflex update_step_count {
+        step_count <- step_count + 1;
+    }
 }
 
+species osm_agent {
+    string highway_str;
+    string building_str;
+}
+
+species road {
+    rgb color <- rnd_color(255);
+    string type;
+    aspect default {
+        draw shape color: color;
+    }
+}
+
+species node_agent {
+    string type;
+    aspect default {
+        draw square(5) color: #red;
+    }
+}
 
 species building {
-	string type; 
-	rgb color <- #gray  ;
-	
-	aspect base {
-		draw shape color: color ;
-	}
+    aspect default {
+        draw shape color: #grey;
+    }
 }
 
-species road  {
-	rgb color <- #black ;
-	aspect base {
-		draw shape color: color ;
-	}
+species terminal {
+    string type <- "terminal";
+    rgb color <- #blue;
+    aspect default {
+        draw circle(5) color: color;
+    }
 }
 
-species people skills:[moving] {
-	rgb color <- #yellow ;
-	building living_place <- nil ;
-	building working_place <- nil ;
-	int start_work ;
-	int end_work  ;
-	string objective ; 
-	point the_target <- nil ;
-		
-	reflex time_to_work when: current_date.hour = start_work and objective = "resting"{
-		objective <- "working" ;
-		the_target <- any_location_in (working_place);
-	}
-		
-	reflex time_to_go_home when: current_date.hour = end_work and objective = "working"{
-		objective <- "resting" ;
-		the_target <- any_location_in (living_place); 
-	} 
-	 
-	reflex move when: the_target != nil {
-		do goto target: the_target on: the_graph ; 
-		if the_target = location {
-			the_target <- nil ;
-		}
-	}
-	
-	aspect base {
-		draw circle(10) color: color border: #black;
-	}
+species hotspot {
+    string type <- "hotspot";
+    rgb color <- #red;
+    aspect default {
+        draw circle(5) color: color;
+    }
 }
 
+species commuter skills: [moving] {
+    terminal start_terminal;
+    terminal destination_terminal;
+    string preferred_transport;
+    float patience_level;
+    terminal current_terminal;
+    point location;
+    point destination;
+    string objective <- "idle";
+    point the_target <- nil;
+    hotspot intermediate_hotspot;
+
+    aspect default {
+        draw circle(5) color: #green;
+    }
+
+    reflex start_journey when: objective = "idle" {
+        objective <- "travelling_to_hotspot";
+        the_target <- intermediate_hotspot.location;
+    }
+
+    reflex move when: the_target != nil {
+        do goto(target: the_target) speed: 1.0;
+        if (the_target = location) {
+            if (the_target = intermediate_hotspot.location) {
+                the_target <- destination;
+                objective <- "travelling_to_terminal";
+            } else {
+                the_target <- nil;
+                objective <- "idle";
+                current_terminal <- destination_terminal;
+                commuters_reached_hotspot <- true;
+            }
+        }
+    }
+}
+
+species vehicle skills: [moving] {
+    string type; // tricycle, jeepney
+    int capacity;
+    bool available;
+    terminal current_terminal;
+    point location;
+    point destination;
+    string objective <- "waiting";
+    point the_target <- nil;
+    hotspot intermediate_hotspot;
+
+    aspect default {
+        draw square(5) color: (type = "jeepney" ? #orange : #yellow);
+    }
+
+    reflex assign_trip when: objective = "waiting" and available = true and commuters_reached_hotspot {
+        intermediate_hotspot <- one_of(hotspot);
+        the_target <- intermediate_hotspot.location;
+        objective <- "moving_to_hotspot";
+        available <- false;
+    }
+
+    reflex move_to_hotspot when: the_target != nil and objective = "moving_to_hotspot" {
+        do goto(target: the_target) speed: 2.0;
+        if (the_target = location) {
+            the_target <- nil;
+            destination <- one_of(terminal).location;
+            the_target <- destination;
+            objective <- "moving_to_terminal";
+        }
+    }
+
+    reflex move_to_terminal when: the_target != nil and objective = "moving_to_terminal" {
+        do goto(target: the_target) speed: 2.0;
+        if (the_target = location) {
+            the_target <- nil;
+            objective <- "waiting";
+            current_terminal <- one_of(terminal);
+            location <- current_terminal.location;
+            available <- true;
+        }
+    }
+}
 
 experiment road_traffic type: gui {
-	parameter "Shapefile for the buildings:" var: shape_file_buildings category: "GIS" ;
-	parameter "Shapefile for the roads:" var: shape_file_roads category: "GIS" ;
-	parameter "Shapefile for the bounds:" var: shape_file_bounds category: "GIS" ;	
-	parameter "Number of people agents" var: nb_people category: "People" ;
-	parameter "Earliest hour to start work" var: min_work_start category: "People" min: 2 max: 8;
-	parameter "Latest hour to start work" var: max_work_start category: "People" min: 8 max: 12;
-	parameter "Earliest hour to end work" var: min_work_end category: "People" min: 12 max: 16;
-	parameter "Latest hour to end work" var: max_work_end category: "People" min: 16 max: 23;
-	parameter "minimal speed" var: min_speed category: "People" min: 0.1 #km/#h ;
-	parameter "maximal speed" var: max_speed category: "People" max: 10 #km/#h;
-	
-	output {
-		display city_display type: 3d {
-			species building aspect: base ;
-			species road aspect: base ;
-			species people aspect: base ;
-		}
-	}
+    parameter "File:" var: osmfile <- file (osm_file("../includes/eto don sa crossing.osm", filtering));
+    output {
+        display city_display {
+            species building refresh: false;
+            species road refresh: false;
+            species node_agent refresh: false;
+            species terminal refresh: false;
+            species hotspot refresh: false;
+            species commuter refresh: false;
+            species vehicle refresh: false;
+        }
+    }
 }
